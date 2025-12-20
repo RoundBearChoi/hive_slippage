@@ -3,7 +3,7 @@ from beem.nodelist import NodeList
 from beem.market import Market
 
 # ------------------- CONFIGURATION -------------------
-tolerable_slip_pct = 0.5  # Stop when slippage would exceed this % vs best ask
+tolerable_slip_pct = 0.8  # Stop when slippage would exceed this % vs best ask
 orderbook_limit = 100     # How many orders to fetch (increase if you expect deep fills)
 top_bids_to_show = 20
 # ----------------------------------------------------
