@@ -4,7 +4,7 @@ from beem.market import Market
 
 # ------------------- CONFIGURATION -------------------
 top_x = 20
-amount_hbd = 5000.0
+amount_hbd = 100000.0
 # ----------------------------------------------------
 
 # Connect to Hive nodes
