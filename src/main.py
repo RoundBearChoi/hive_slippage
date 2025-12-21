@@ -1,12 +1,37 @@
+# main.py
 from beem import Hive
 from beem.nodelist import NodeList
 from beem.market import Market
+import sys
 
 # ------------------- CONFIGURATION -------------------
-tolerable_slip_pct = 0.8  # Stop when slippage would exceed this % vs best ask
-orderbook_limit = 100     # How many orders to fetch (increase if you expect deep fills)
+orderbook_limit = 100  # How many orders to fetch (increase if you expect deep fills)
 top_bids_to_show = 20
 # ----------------------------------------------------
+
+# Ask user for tolerable slippage
+while True:
+    user_input = input("What's the tolerable slippage %? ").strip()
+    
+    if not user_input:
+        print("Error: No input provided.")
+        continue
+    
+    # Remove % sign if present
+    if user_input.endswith('%'):
+        user_input = user_input[:-1]
+    
+    try:
+        tolerable_slip_pct = float(user_input)
+        if tolerable_slip_pct < 0:
+            print("Error: Slippage tolerance cannot be negative.")
+            continue
+        break
+    except ValueError:
+        print("Error: Invalid input. Please enter a valid number")
+        continue
+
+print(f"Using tolerable slippage: {tolerable_slip_pct}%")
 
 # Connect to Hive nodes
 nodelist = NodeList()
@@ -25,7 +50,6 @@ print("\n--- Internal Market Ticker ---")
 print(f"Latest price : {float(ticker['latest']):.6f} HBD per HIVE")
 print(f"Highest bid : {float(ticker['highest_bid']):.6f} HBD per HIVE")
 print(f"Lowest ask : {float(ticker['lowest_ask']):.6f} HBD per HIVE")
-
 best_price = float(ticker['lowest_ask'])
 
 # Get order book
@@ -42,7 +66,6 @@ for bid in orderbook['bids'][:top_bids_to_show]:
 
 # Slippage simulation: fill asks until tolerance is exceeded
 print(f"\n--- Slippage Simulation: Filling asks until slippage > {tolerable_slip_pct}% vs best ask ({best_price:.6f}) ---")
-
 cumulative_hive = 0.0
 cumulative_cost = 0.0  # HBD spent
 orders_used = 0
@@ -51,23 +74,21 @@ for i, ask in enumerate(asks):
     ask_hive = ask['hive'] / 1000.0
     ask_hbd = ask['hbd'] / 1000.0
     price = float(ask['real_price'])
-
     # Temporary values if we add this order
     temp_hive = cumulative_hive + ask_hive
     temp_cost = cumulative_cost + ask_hbd
     temp_avg = temp_cost / temp_hive if temp_hive > 0 else price
     temp_slippage_pct = ((temp_avg / best_price) - 1) * 100
-
+    
     if temp_slippage_pct > tolerable_slip_pct:
         print(f"\nStopped before order {i+1}: adding it would cause {temp_slippage_pct:+.4f}% slippage (exceeds {tolerable_slip_pct}%)")
         break
-
+    
     # Accept the order
     cumulative_hive = temp_hive
     cumulative_cost = temp_cost
     orders_used = i + 1
     print(f"Order {i+1:3d}: +{ask_hive:8.3f} HIVE for {ask_hbd:8.3f} HBD @ {price:.6f} → cumul slip: {temp_slippage_pct:+.4f}%")
-
 else:
     print("\nReached end of fetched orders without exceeding slippage tolerance.")
 
@@ -90,12 +111,12 @@ if cumulative_hive > 0:
     slippage_pct = ((avg_price / best_price) - 1) * 100
     hive_per_hbd = cumulative_hive / cumulative_cost
     print(f"\n=== Results (staying within {tolerable_slip_pct}% slippage) ===")
-    print(f"Orders used         : {orders_used}")
-    print(f"Total HIVE you get  : {cumulative_hive:.3f} HIVE")
+    print(f"Orders used : {orders_used}")
+    print(f"Total HIVE you get : {cumulative_hive:.3f} HIVE")
     print(f"Total HBD you spend : {cumulative_cost:.3f} HBD")
-    print(f"Average price       : {avg_price:.6f} HBD per HIVE")
-    print(f"Best ask price      : {best_price:.6f} HBD per HIVE")
-    print(f"Actual slippage     : {slippage_pct:+.4f}%")
-    print(f"HIVE per HBD        : {hive_per_hbd:.4f} (higher = better)")
+    print(f"Average price : {avg_price:.6f} HBD per HIVE")
+    print(f"Best ask price : {best_price:.6f} HBD per HIVE")
+    print(f"Actual slippage : {slippage_pct:+.4f}%")
+    print(f"HIVE per HBD : {hive_per_hbd:.4f} (higher = better)")
 else:
     print("\nNo liquidity available within the slippage tolerance.")
