@@ -5,6 +5,7 @@ from beem.market import Market
 import sys
 import requests
 
+
 # ------------------- CONFIGURATION -------------------
 orderbook_limit = 100  # How many orders to fetch (increase if you expect deep fills)
 top_bids_to_show = 20
