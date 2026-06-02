@@ -1,4 +1,7 @@
-# main.py
+# fromGecko.py
+# Hive internal market (HIVE/HBD) slippage analysis tool
+# Uses beem + CoinGecko reference price
+
 from beem import Hive
 from beem.nodelist import NodeList
 from beem.market import Market
@@ -95,14 +98,30 @@ else:
 # Get order book
 orderbook = market.orderbook(limit=orderbook_limit, raw_data=True)
 
-# Show top orders for context (opposite side)
-print(f"\n--- Top {top_orders_to_show} {'Bids' if is_buy else 'Asks'} (for context) ---")
-side_to_show = orderbook['bids'] if is_buy else orderbook['asks']
-for order in side_to_show[:top_orders_to_show]:
-    price = float(order['real_price'])
-    hive_amount = order['hive'] / 1000.0
-    hbd_amount = order['hbd'] / 1000.0
-    print(f"{hive_amount:8.3f} HIVE @ {price:.6f} HBD ({'pay' if is_buy else 'receive'} {hbd_amount:8.3f} HBD)")
+# === UPDATED: Print TOP 20 BIDS + TOP 20 ASKS for full depth context ===
+print("\n" + "="*70)
+print(f"📊 ORDER BOOK DEPTH (Top {top_orders_to_show} levels on each side)")
+print("="*70)
+
+def _print_book_side(title, orders_list):
+    print(f"\n{title}")
+    print(f"{'Rank':>4} {'HIVE Amount':>12} {'Price (HBD/HIVE)':>18} {'HBD Value':>12}")
+    print("-" * 50)
+    for idx, order in enumerate(orders_list[:top_orders_to_show], 1):
+        price = float(order['real_price'])
+        h = order['hive'] / 1000.0
+        hb = order['hbd'] / 1000.0
+        print(f"{idx:>4} {h:>12.3f} {price:>18.6f} {hb:>12.3f}")
+
+_print_book_side("🟢 BIDS (buyers - highest price first)", orderbook.get('bids', []))
+_print_book_side("🔴 ASKS (sellers - lowest price first)", orderbook.get('asks', []))
+
+# Quick market stats
+if orderbook.get('bids') and orderbook.get('asks'):
+    best_bid = float(orderbook['bids'][0]['real_price'])
+    best_ask = float(orderbook['asks'][0]['real_price'])
+    spread_pct = ((best_ask / best_bid) - 1) * 100 if best_bid > 0 else 0
+    print(f"\nBest Bid: {best_bid:.6f} HBD/HIVE | Best Ask: {best_ask:.6f} HBD/HIVE | Spread: {spread_pct:.4f}%")
 
 # Select side to fill
 if is_buy:
