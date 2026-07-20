@@ -1,76 +1,54 @@
 # fromGecko.py
 # Hive internal market (HIVE/HBD) slippage analysis tool
+# Focused on converting HBD → HIVE (filling asks)
 # Uses beem + CoinGecko reference price
 
 from beem import Hive
 from beem.nodelist import NodeList
 from beem.market import Market
-import sys
 import requests
 
 # ------------------- CONFIGURATION -------------------
-orderbook_limit = 100  # How many orders to fetch (increase if you expect deep fills)
-top_orders_to_show = 20
+orderbook_limit = 100          # How many orders to fetch
+top_orders_to_show = 20        # How many levels to display
 # ----------------------------------------------------
 
-# Ask user for direction
+# 1. Ask for tolerable slippage first
 while True:
-    action_input = input("Do you want to BUY or SELL HIVE? (buy/sell): ").strip().lower()
-    if action_input in ['buy', 'sell']:
-        action = action_input
-        is_buy = action == 'buy'
-        break
-    print("Error: Please enter 'buy' or 'sell'.")
+    user_input = input("Tolerable slippage %? ").strip()
 
-print(f"\nYou selected: {action.upper()} HIVE")
-
-# Ask user for tolerable slippage
-while True:
-    user_input = input("What's the tolerable slippage %? ").strip()
-   
     if not user_input:
         print("Error: No input provided.")
         continue
-   
-    # Remove % sign if present
+
+    # Allow trailing %
     if user_input.endswith('%'):
         user_input = user_input[:-1]
-   
+
     try:
         tolerable_slip_pct = float(user_input)
         if tolerable_slip_pct < 0:
-            print("Error: Slippage tolerance cannot be negative.")
+            print("Error: Slippage cannot be negative.")
             continue
         break
     except ValueError:
-        print("Error: Invalid input. Please enter a valid number")
-        continue
+        print("Error: Please enter a valid number (e.g. 1.5 or 2%)")
 
-print(f"Using tolerable slippage: {tolerable_slip_pct}%")
+print(f"\nUsing tolerable slippage: {tolerable_slip_pct}%")
 
-# Connect to Hive nodes
+# 2. Connect to Hive
 nodelist = NodeList()
 nodelist.update_nodes()
 hive_nodes = nodelist.get_hive_nodes()
 hive = Hive(node=hive_nodes)
-print("Connected to Hive blockchain!")
+print("Connected to Hive blockchain")
 print("Current block:", hive.get_dynamic_global_properties()['head_block_number'])
 
 # Internal market: base=HIVE, quote=HBD
 market = Market(base="HIVE", quote="HBD", blockchain_instance=hive)
 
-# Ticker
-ticker = market.ticker()
-print("\n--- Internal Market Ticker ---")
-internal_latest = float(ticker['latest'])
-internal_highest_bid = float(ticker['highest_bid'])
-internal_lowest_ask = float(ticker['lowest_ask'])
-print(f"Latest price : {internal_latest:.6f} HBD per HIVE")
-print(f"Highest bid  : {internal_highest_bid:.6f} HBD per HIVE")
-print(f"Lowest ask   : {internal_lowest_ask:.6f} HBD per HIVE")
-
-# Fetch Coingecko HIVE/USD price only (HBD assumed = 1 USD)
-print("\n--- Fetching external reference price from Coingecko ---")
+# 3. CoinGecko reference price
+print("\n--- CoinGecko Reference ---")
 try:
     response = requests.get(
         "https://api.coingecko.com/api/v3/simple/price?ids=hive&vs_currencies=usd",
@@ -79,120 +57,111 @@ try:
     response.raise_for_status()
     hive_usd = response.json()["hive"]["usd"]
     reference_price = hive_usd
-    print(f"Coingecko HIVE/USD : {hive_usd:.6f} USD (HBD ≈ 1 USD)")
+    print(f"CoinGecko HIVE price : {hive_usd:.6f} USD  (HBD ≈ 1 USD)")
 except Exception as e:
-    print(f"Error fetching Coingecko price: {e}")
-    print("Falling back to internal price as reference.")
-    reference_price = internal_lowest_ask if is_buy else internal_highest_bid
+    print(f"Error fetching CoinGecko: {e}")
+    print("Falling back to internal lowest ask as reference.")
+    ticker = market.ticker()
+    reference_price = float(ticker['lowest_ask'])
 
-print(f"\nReference price used for slippage: {reference_price:.6f} USD/HIVE (HBD ≈ 1)")
+# 4. Quick internal market snapshot
+ticker = market.ticker()
+lowest_ask = float(ticker['lowest_ask'])
+highest_bid = float(ticker['highest_bid'])
+premium = ((lowest_ask / reference_price) - 1) * 100
+print(f"Internal lowest ask  : {lowest_ask:.6f} HBD/HIVE  ({premium:+.3f}% vs CoinGecko)")
+print(f"Internal highest bid : {highest_bid:.6f} HBD/HIVE")
 
-# Show premium/discount of internal market vs Coingecko
-if is_buy:
-    premium_ask_pct = ((internal_lowest_ask / reference_price) - 1) * 100
-    print(f"Internal lowest ask premium vs Coingecko: {premium_ask_pct:+.4f}%")
-else:
-    premium_bid_pct = ((internal_highest_bid / reference_price) - 1) * 100
-    print(f"Internal highest bid vs Coingecko: {premium_bid_pct:+.4f}%")
-
-# Get order book
+# 5. Fetch orderbook (we only care about asks = people selling HIVE)
 orderbook = market.orderbook(limit=orderbook_limit, raw_data=True)
+asks = orderbook.get('asks', [])
 
-# === UPDATED: Print TOP 20 BIDS + TOP 20 ASKS for full depth context ===
-print("\n" + "="*70)
-print(f"📊 ORDER BOOK DEPTH (Top {top_orders_to_show} levels on each side)")
-print("="*70)
+if not asks:
+    print("\nNo asks found on the internal market.")
+    exit()
 
-def _print_book_side(title, orders_list):
-    print(f"\n{title}")
-    print(f"{'Rank':>4} {'HIVE Amount':>12} {'Price (HBD/HIVE)':>18} {'HBD Value':>12}")
-    print("-" * 50)
-    for idx, order in enumerate(orders_list[:top_orders_to_show], 1):
-        price = float(order['real_price'])
-        h = order['hive'] / 1000.0
-        hb = order['hbd'] / 1000.0
-        print(f"{idx:>4} {h:>12.3f} {price:>18.6f} {hb:>12.3f}")
-
-_print_book_side("🟢 BIDS (buyers - highest price first)", orderbook.get('bids', []))
-_print_book_side("🔴 ASKS (sellers - lowest price first)", orderbook.get('asks', []))
-
-# Quick market stats
-if orderbook.get('bids') and orderbook.get('asks'):
-    best_bid = float(orderbook['bids'][0]['real_price'])
-    best_ask = float(orderbook['asks'][0]['real_price'])
-    spread_pct = ((best_ask / best_bid) - 1) * 100 if best_bid > 0 else 0
-    print(f"\nBest Bid: {best_bid:.6f} HBD/HIVE | Best Ask: {best_ask:.6f} HBD/HIVE | Spread: {spread_pct:.4f}%")
-
-# Select side to fill
-if is_buy:
-    orders = orderbook['asks']
-    sim_title = f"BUYING HIVE by filling asks until slippage > {tolerable_slip_pct}%"
-    stop_condition = lambda s: s > tolerable_slip_pct
-else:
-    orders = orderbook['bids']
-    sim_title = f"SELLING HIVE by filling bids until slippage < -{tolerable_slip_pct}%"
-    stop_condition = lambda s: s < -tolerable_slip_pct
-
-print(f"\n--- Slippage Simulation: {sim_title} vs Coingecko ({reference_price:.6f}) ---")
+# ----------------------------------------------------
+# 6. Show top 20 asks with cumulative HBD + mark slippage point
+# ----------------------------------------------------
+print("\n" + "=" * 78)
+print(f"ASKS (selling HIVE) — Top {top_orders_to_show} levels")
+print("=" * 78)
+print(f"{'#':>3}  {'HIVE':>12}  {'Price':>12}  {'HBD':>12}  {'Cumul HBD':>12}  {'Slip %':>9}")
+print("-" * 78)
 
 cumulative_hive = 0.0
 cumulative_hbd = 0.0
-orders_used = 0
+slippage_hit_index = None          # first order that exceeds tolerance
+max_hbd_within_tolerance = 0.0
+max_hive_within_tolerance = 0.0
 
-for i, order in enumerate(orders):
-    hive_amount = order['hive'] / 1000.0
-    hbd_amount = order['hbd'] / 1000.0
+for idx, order in enumerate(asks[:top_orders_to_show], 1):
     price = float(order['real_price'])
-    
-    # Temporary values if we add this order
-    temp_hive = cumulative_hive + hive_amount
-    temp_hbd = cumulative_hbd + hbd_amount
-    temp_avg = temp_hbd / temp_hive if temp_hive > 0 else price
-    temp_slippage_pct = ((temp_avg / reference_price) - 1) * 100
-   
-    if stop_condition(temp_slippage_pct):
-        direction_msg = f"exceeds {tolerable_slip_pct}%" if is_buy else f"exceeds -{tolerable_slip_pct}%"
-        print(f"\nStopped before order {i+1}: adding it would cause {temp_slippage_pct:+.4f}% slippage ({direction_msg})")
-        break
-   
-    # Accept the order
-    cumulative_hive = temp_hive
-    cumulative_hbd = temp_hbd
-    orders_used = i + 1
-    verb = "for" if is_buy else "receiving"
-    print(f"Order {i+1:3d}: +{hive_amount:8.3f} HIVE {verb} {hbd_amount:8.3f} HBD @ {price:.6f} → cumul slip: {temp_slippage_pct:+.4f}%")
-else:
-    print("\nReached end of fetched orders without exceeding slippage tolerance.")
+    hive_amt = order['hive'] / 1000.0
+    hbd_amt  = order['hbd']  / 1000.0
 
-# Show the orders used
-print(f"\n--- Top {orders_used} {'Asks' if is_buy else 'Bids'} Used in Simulation ---")
-cumulative_hbd_liquidity = 0.0
-for i in range(orders_used):
-    order = orders[i]
-    price = float(order['real_price'])
-    hive_amount = order['hive'] / 1000.0
-    hbd_amount = order['hbd'] / 1000.0
-    cumulative_hbd_liquidity += hbd_amount
-    direction = "pay" if is_buy else "receive"
-    print(f"{i+1:2d}: {hive_amount:8.3f} HIVE @ {price:.6f} HBD → {direction} {hbd_amount:8.3f} HBD")
+    # Temporary values if we take this order
+    temp_hive = cumulative_hive + hive_amt
+    temp_hbd  = cumulative_hbd  + hbd_amt
+    temp_avg  = temp_hbd / temp_hive if temp_hive > 0 else price
+    temp_slip = ((temp_avg / reference_price) - 1) * 100
 
-liquidity_desc = f"HBD needed to buy" if is_buy else f"HBD receivable by selling"
-print(f"\n>>> Total liquidity within {tolerable_slip_pct}% slippage vs Coingecko: {cumulative_hbd_liquidity:.3f} HBD (≈USD) {liquidity_desc} {cumulative_hive:.3f} HIVE <<<")
+    # Check if this order would push us over the limit
+    marker = ""
+    if slippage_hit_index is None and temp_slip > tolerable_slip_pct:
+        slippage_hit_index = idx
+        marker = "  <-------"
 
-# Final results
-if cumulative_hive > 0:
-    avg_price = cumulative_hbd / cumulative_hive
-    slippage_pct = ((avg_price / reference_price) - 1) * 100
-    print(f"\n=== Results ({action.upper()}ING HIVE, staying within {tolerable_slip_pct}% slippage vs Coingecko) ===")
-    print(f"Orders used           : {orders_used}")
-    print(f"Total HIVE {'received' if is_buy else 'sold'}     : {cumulative_hive:.3f} HIVE")
-    print(f"Total HBD {'spent' if is_buy else 'received'}       : {cumulative_hbd:.3f} HBD")
-    print(f"Average price paid/received : {avg_price:.6f} HBD per HIVE")
-    print(f"Coingecko reference   : {reference_price:.6f} USD per HIVE")
-    print(f"Actual slippage       : {slippage_pct:+.4f}%")
-    if is_buy:
-        print(f"HIVE per HBD          : {cumulative_hive / cumulative_hbd:.4f} (higher = better)")
+    # Only accumulate if still within tolerance
+    if slippage_hit_index is None:
+        cumulative_hive = temp_hive
+        cumulative_hbd  = temp_hbd
+        max_hbd_within_tolerance  = cumulative_hbd
+        max_hive_within_tolerance = cumulative_hive
+
+    print(f"{idx:>3}  {hive_amt:12.3f}  {price:12.6f}  {hbd_amt:12.3f}  {temp_hbd:12.3f}  {temp_slip:+8.3f}%{marker}")
+
+# If we never hit the limit inside the top 20, keep going deeper
+if slippage_hit_index is None:
+    for idx, order in enumerate(asks[top_orders_to_show:], top_orders_to_show + 1):
+        price = float(order['real_price'])
+        hive_amt = order['hive'] / 1000.0
+        hbd_amt  = order['hbd']  / 1000.0
+
+        temp_hive = cumulative_hive + hive_amt
+        temp_hbd  = cumulative_hbd  + hbd_amt
+        temp_avg  = temp_hbd / temp_hive if temp_hive > 0 else price
+        temp_slip = ((temp_avg / reference_price) - 1) * 100
+
+        if temp_slip > tolerable_slip_pct:
+            slippage_hit_index = idx
+            break
+
+        cumulative_hive = temp_hive
+        cumulative_hbd  = temp_hbd
+        max_hbd_within_tolerance  = cumulative_hbd
+        max_hive_within_tolerance = cumulative_hive
+
+# ----------------------------------------------------
+# 7. Final summary
+# ----------------------------------------------------
+print("\n" + "=" * 78)
+print("RESULT")
+print("=" * 78)
+
+if max_hbd_within_tolerance > 0:
+    avg_price = max_hbd_within_tolerance / max_hive_within_tolerance
+    actual_slip = ((avg_price / reference_price) - 1) * 100
+
+    print(f"You can convert up to  {max_hbd_within_tolerance:,.3f} HBD")
+    print(f"and receive             {max_hive_within_tolerance:,.3f} HIVE")
+    print(f"Average fill price    : {avg_price:.6f} HBD per HIVE")
+    print(f"Actual slippage       : {actual_slip:+.3f}%  (limit was {tolerable_slip_pct}%)")
+
+    if slippage_hit_index is not None:
+        print(f"\nSlippage limit is hit at order #{slippage_hit_index}")
     else:
-        print(f"HBD per HIVE          : {cumulative_hbd / cumulative_hive:.4f} (higher = better)")
+        print(f"\nAll fetched orders ({len(asks)}) stay within {tolerable_slip_pct}% slippage.")
 else:
-    print("\nNo liquidity available within the slippage tolerance (internal prices too far from Coingecko).")
+    print(f"No liquidity available within {tolerable_slip_pct}% slippage.")
+    print("Internal asks are already too expensive vs CoinGecko.")
