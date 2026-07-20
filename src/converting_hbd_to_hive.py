@@ -252,10 +252,6 @@ if max_hive_within_tolerance > 0:
                 print(f"KRW received          : {krw_received:,.0f}")
                 print(f"Implied 1 USD ≈       : {implied_usd_krw:,.2f} KRW")
                 print()
-                print("(This is the effective rate you would lock in by:")
-                print("  1. Buying HIVE with HBD on Hive internal market")
-                print("  2. Selling that HIVE for KRW on Upbit)")
-                print("It can be compared against the real USD/KRW rate to spot arb opportunities.")
 
     except Exception as e:
         print(f"Failed to fetch or process Upbit orderbook: {e}")
