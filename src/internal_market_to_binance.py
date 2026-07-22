@@ -142,7 +142,7 @@ def main():
         if max_hbd > 0 and usdt_received > 0:
             # Because HBD ≈ 1 USD and USDT ≈ 1 USD, the ratio directly shows
             # the combined effect of internal-market premium + Binance impact.
-            loss_pct = ((max_hbd - usdt_received) / max_hbd) * 100
+            loss_pct = ((max_hbd - usdt_received) / max_hbd) * 100 * -1
             recovery_ratio = usdt_received / max_hbd
 
             print("\n" + "=" * 78)
@@ -151,9 +151,8 @@ def main():
             print(f"HBD started with       : {max_hbd:,.3f} HBD  (≈ USD)")
             print(f"USDT ended with        : {usdt_received:,.4f} USDT")
             print(f"Recovery ratio         : {recovery_ratio:.6f}  (USDT / HBD)")
-            print(f"Overall % loss         : {loss_pct:+.3f}%   ← treated as path slippage")
+            print(f"Overall % loss         : {loss_pct:+.3f}%")
             print()
-            print("(Fees ignored. Positive loss means you end with fewer USD-equivalent units.)")
 
     except Exception as e:
         print(f"Failed to fetch or process Binance orderbook: {e}")
