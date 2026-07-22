@@ -8,6 +8,8 @@ from beem.nodelist import NodeList
 from beem.market import Market
 import requests
 
+from coingecko_hive_price import get_hive_usd_price
+
 
 def get_tolerable_slippage():
     """Interactively ask user for tolerable slippage percentage."""
@@ -57,12 +59,7 @@ def get_reference_price(market):
     """
     print("\n--- CoinGecko Reference ---")
     try:
-        response = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price?ids=hive&vs_currencies=usd",
-            timeout=10
-        )
-        response.raise_for_status()
-        hive_usd = response.json()["hive"]["usd"]
+        hive_usd = get_hive_usd_price()
         reference_price = hive_usd
         print(f"CoinGecko HIVE price : {hive_usd:.6f} USD  (HBD ≈ 1 USD)")
         return reference_price, hive_usd
