@@ -1,7 +1,9 @@
 # internal_market_to_binance.py
 # Hive internal market (HIVE/HBD) + Binance HIVE/USDT slippage analysis
 # Path: HBD → HIVE (internal market) → USDT (Binance bids)
-# Reports overall % loss from starting HBD to ending USDT (treated as path slippage)
+# At the end we sell ALL HIVE received from the internal market for USDT,
+# then compare starting HBD vs ending USDT. Both HBD and USDT are treated
+# as exactly 1 USD when computing gain/loss.
 # Fees are ignored for now.
 
 from hive_orderbook import (
@@ -94,10 +96,10 @@ def main():
         return
 
     # ----------------------------------------------------
-    # 6. Hypothetical: sell the received HIVE on Binance for USDT
+    # 6. Sell ALL HIVE we received from the internal market on Binance for USDT
     # ----------------------------------------------------
     print("\n" + "=" * 78)
-    print("HYPOTHETICAL: Sell received HIVE on Binance (HIVEUSDT bids)")
+    print("SELL ALL HIVE ON BINANCE (HIVEUSDT bids)")
     print("=" * 78)
 
     try:
@@ -117,7 +119,7 @@ def main():
             preview_cum_usdt += bp * bs
             print(f"{i:>3}  {bp:12.6f}  {bs:16.4f}  {preview_cum_hive:12.3f}  {preview_cum_usdt:14,.4f}")
 
-        # Simulate full fill of the HIVE we obtained
+        # Simulate full fill of the HIVE we obtained from the internal market
         usdt_received, hive_sold, levels_used, remaining_hive = simulate_sell_hive_on_binance(
             max_hive, bids
         )
@@ -137,21 +139,30 @@ def main():
             print(f"  Average fill price    : {avg_usdt_per_hive:.6f} USDT per HIVE")
 
         # ----------------------------------------------------
-        # 7. Overall path: HBD start → USDT end  (treat % difference as slippage)
+        # 7. Final P&L: HBD we started with vs USDT we ended with
+        #    Assumption: HBD ≡ 1 USD and USDT ≡ 1 USD
         # ----------------------------------------------------
         if max_hbd > 0 and usdt_received > 0:
-            # Because HBD ≈ 1 USD and USDT ≈ 1 USD, the ratio directly shows
-            # the combined effect of internal-market premium + Binance impact.
-            loss_pct = ((max_hbd - usdt_received) / max_hbd) * 100 * -1
+            absolute_pnl = usdt_received - max_hbd          # positive = gain, negative = loss
+            pnl_pct = (absolute_pnl / max_hbd) * 100
             recovery_ratio = usdt_received / max_hbd
 
             print("\n" + "=" * 78)
-            print("OVERALL PATH RESULT (HBD → HIVE → USDT)")
+            print("FINAL RESULT — HBD STARTED vs USDT ENDED")
             print("=" * 78)
-            print(f"HBD started with       : {max_hbd:,.3f} HBD  (≈ USD)")
-            print(f"USDT ended with        : {usdt_received:,.4f} USDT")
-            print(f"Recovery ratio         : {recovery_ratio:.6f}  (USDT / HBD)")
-            print(f"Overall % loss         : {loss_pct:+.3f}%")
+            print(f"HBD started with       : {max_hbd:,.4f} HBD   (treated as exactly 1 USD)")
+            print(f"USDT ended with        : {usdt_received:,.4f} USDT  (treated as exactly 1 USD)")
+            print(f"Absolute gain/loss     : {absolute_pnl:+,.4f} USD")
+            print(f"P&L percentage         : {pnl_pct:+.3f}%")
+            print(f"Recovery ratio         : {recovery_ratio:.6f}  (USDT received / HBD started)")
+            print()
+
+            if absolute_pnl < 0:
+                print(f"→ Overall path lost {abs(absolute_pnl):,.4f} USD ({abs(pnl_pct):.3f}%)")
+            elif absolute_pnl > 0:
+                print(f"→ Overall path gained {absolute_pnl:,.4f} USD ({pnl_pct:.3f}%)")
+            else:
+                print("→ Overall path broke even")
             print()
 
     except Exception as e:
