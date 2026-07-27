@@ -7,7 +7,7 @@
 # Fees are ignored for now (same as the rest of the repo).
 
 import requests
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 # ------------------- CONFIGURATION -------------------
 DEFAULT_ORDERBOOK_COUNT = 30   # Upbit max supported levels for /v1/orderbook
