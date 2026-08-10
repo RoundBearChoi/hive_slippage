@@ -38,13 +38,37 @@ def get_tolerable_slippage():
 
 
 def connect_to_hive():
-    """Connect to Hive and return (hive, market) for HIVE/HBD."""
-    nodelist = NodeList()
-    nodelist.update_nodes()
-    hive_nodes = nodelist.get_hive_nodes()
-    hive = Hive(node=hive_nodes)
+    """Connect to Hive and return (hive, market) for HIVE/HBD.
+
+    Uses a curated list of currently reliable public nodes instead of
+    relying solely on NodeList, which can return temporarily dead nodes
+    (e.g. api.c0ff33a.uk returning Empty Reply).
+    """
+    # Curated list of healthy public Hive nodes (ordered by reliability)
+    # Updated Aug 2026 — excludes currently dead nodes like api.c0ff33a.uk
+    good_nodes = [
+        "https://api.hive.blog",
+        "https://api.openhive.network",
+        "https://rpc.mahdiyari.info",
+        "https://api.deathwing.me",
+        "https://api.syncad.com",
+        "https://techcoderx.com",
+        "https://hiveapi.actifit.io",
+        "https://hive.atexoras.com:2096",
+    ]
+
+    hive = Hive(
+        node=good_nodes,
+        num_retries=5,          # how many times to try switching nodes
+        num_retries_call=3,     # retries per node before switching
+        timeout=15,
+    )
+
+    # Quick health check + show which node we landed on
+    props = hive.get_dynamic_global_properties()
     print("Connected to Hive blockchain")
-    print("Current block:", hive.get_dynamic_global_properties()['head_block_number'])
+    print(f"Current block: {props['head_block_number']}")
+    print(f"Using node   : {hive.rpc.url}")
 
     # Internal market: base=HIVE, quote=HBD
     market = Market(base="HIVE", quote="HBD", blockchain_instance=hive)
