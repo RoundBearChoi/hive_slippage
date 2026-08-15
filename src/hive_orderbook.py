@@ -155,7 +155,7 @@ def analyze_hbd_to_hive(
         hive_amt = order['hive'] / 1000.0
         hbd_amt  = order['hbd']  / 1000.0
 
-        # Temporary values if we take this order
+        # Always compute the progressive fill for display
         temp_hive = cumulative_hive + hive_amt
         temp_hbd  = cumulative_hbd  + hbd_amt
         temp_avg  = temp_hbd / temp_hive if temp_hive > 0 else price
@@ -167,10 +167,12 @@ def analyze_hbd_to_hive(
             slippage_hit_index = idx
             marker = "  <-------"
 
-        # Only accumulate if still within tolerance
+        # Always advance the display cumulative so the table shows a true running sum
+        cumulative_hive = temp_hive
+        cumulative_hbd  = temp_hbd
+
+        # Only record this level into the "within tolerance" totals if we have not yet exceeded
         if slippage_hit_index is None:
-            cumulative_hive = temp_hive
-            cumulative_hbd  = temp_hbd
             max_hbd_within_tolerance  = cumulative_hbd
             max_hive_within_tolerance = cumulative_hive
 
